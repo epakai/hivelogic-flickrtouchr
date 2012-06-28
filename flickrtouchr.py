@@ -28,6 +28,7 @@ import os
 
 API_KEY       = "e224418b91b4af4e8cdb0564716fa9bd"
 SHARED_SECRET = "7cddb9c9716501a0"
+GRAB_INFO     = True
 
 #
 # Utility functions for dealing with flickr authentication
@@ -193,7 +194,42 @@ def getphoto(id, token, filename):
         return filename
     except:
         print "Failed to retrieve photo id " + id
+#
+# Grab Title and Description
+#
+def getinfo (id, token, filename):
+    try:
+        # Contruct a getInfo request
+        url  = "http://api.flickr.com/services/rest/?method=flickr.photos.getInfo"
+        url += "&photo_id=" + id
     
+        # Sign the request
+        url = flickrsign(url, token)
+    
+        # Make the request
+        response = urllib2.urlopen(url)
+        
+        # Parse the XML
+        dom = xml.dom.minidom.parse(response)
+
+        # Get Photo Info 
+        title = getText(dom.getElementsByTagName("title")[0].childNodes)
+        description = getText(dom.getElementsByTagName("description")[0].childNodes)
+        
+        # Free the DOM memory
+        dom.unlink()
+
+        # Save the file!
+        fh = open(filename, "w")
+        fh.write(title)
+        fh.write("\n\n")
+        fh.write(description)
+        fh.close()
+
+        return filename
+    except:
+        print "Failed to retrieve info id " + id
+
 ######## Main Application ##########
 if __name__ == '__main__':
 
@@ -297,6 +333,7 @@ if __name__ == '__main__':
 
                 # The target
                 target = dir + "/" + photoid + ".jpg"
+                info_target = dir + "/" + photoid
 
                 # Skip files that exist
                 if os.access(target, os.R_OK):
@@ -309,6 +346,7 @@ if __name__ == '__main__':
                     os.link(inodes[photoid], target)
                 else:
                     inodes[photoid] = getphoto(photo.getAttribute("id"), config["token"], target)
+                    inodes[photoid] = getinfo(photo.getAttribute("id"), config["token"], info_target)
 
             # Move on the next page
             page = page + 1
