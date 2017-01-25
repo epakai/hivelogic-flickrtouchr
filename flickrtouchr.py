@@ -201,7 +201,7 @@ def getphoto(id, token, filename):
 def getinfo (id, token, filename):
     try:
         # Contruct a getInfo request
-        url  = "http://api.flickr.com/services/rest/?method=flickr.photos.getInfo"
+        url  = "https://api.flickr.com/services/rest/?method=flickr.photos.getInfo"
         url += "&photo_id=" + id
     
         # Sign the request
