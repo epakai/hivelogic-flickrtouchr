@@ -22,7 +22,7 @@ import urlparse
 import urllib2
 import unicodedata
 import cPickle
-import md5
+import hashlib
 import sys
 import os
 
@@ -46,10 +46,10 @@ def getText(nodelist):
 def getfrob():
     # Create our signing string
     string = SHARED_SECRET + "api_key" + API_KEY + "methodflickr.auth.getFrob"
-    hash   = md5.new(string).digest().encode("hex")
+    hash   = hashlib.md5(string).hexdigest()
 
     # Formulate the request
-    url    = "http://api.flickr.com/services/rest/?method=flickr.auth.getFrob"
+    url    = "https://api.flickr.com/services/rest/?method=flickr.auth.getFrob"
     url   += "&api_key=" + API_KEY + "&api_sig=" + hash
 
     try:
@@ -69,17 +69,17 @@ def getfrob():
         return frob
 
     except:
-        raise "Could not retrieve frob"
+        raise Exception("Could not retrieve frob")
 
 #
 # Login and get a token
 #
 def froblogin(frob, perms):
     string = SHARED_SECRET + "api_key" + API_KEY + "frob" + frob + "perms" + perms
-    hash   = md5.new(string).digest().encode("hex")
+    hash   = hashlib.md5(string).hexdigest()
 
     # Formulate the request
-    url    = "http://api.flickr.com/services/auth/?"
+    url    = "https://api.flickr.com/services/auth/?"
     url   += "api_key=" + API_KEY + "&perms=" + perms
     url   += "&frob=" + frob + "&api_sig=" + hash
 
@@ -101,10 +101,10 @@ def froblogin(frob, perms):
 
     # Now, try and retrieve a token
     string = SHARED_SECRET + "api_key" + API_KEY + "frob" + frob + "methodflickr.auth.getToken"
-    hash   = md5.new(string).digest().encode("hex")
+    hash   = hashlib.md5(string).hexdigest()
     
     # Formulate the request
-    url    = "http://api.flickr.com/services/rest/?method=flickr.auth.getToken"
+    url    = "https://api.flickr.com/services/rest/?method=flickr.auth.getToken"
     url   += "&api_key=" + API_KEY + "&frob=" + frob
     url   += "&api_sig=" + hash
 
@@ -126,7 +126,7 @@ def froblogin(frob, perms):
         # Return the token and userid
         return (nsid, token)
     except:
-        raise "Login failed"
+        raise Exception("Login failed")
 
 # 
 # Sign an arbitrary flickr request with a token
@@ -143,7 +143,7 @@ def flickrsign(url, token):
     params.sort()
     for param in params:
         string += param.replace('=', '')
-    hash   = md5.new(string).digest().encode("hex")
+    hash   = hashlib.md5(string).hexdigest()
 
     # Now, append the api_key, and the api_sig args
     url += "&api_key=" + API_KEY + "&auth_token=" + token + "&api_sig=" + hash
@@ -157,7 +157,7 @@ def flickrsign(url, token):
 def getphoto(id, token, filename):
     try:
         # Contruct a request to find the sizes
-        url  = "http://api.flickr.com/services/rest/?method=flickr.photos.getSizes"
+        url  = "https://api.flickr.com/services/rest/?method=flickr.photos.getSizes"
         url += "&photo_id=" + id
     
         # Sign the request
@@ -173,7 +173,8 @@ def getphoto(id, token, filename):
         sizes =  dom.getElementsByTagName("size")
 
         # Grab the original if it exists
-        if (sizes[-1].getAttribute("label") == "Original"):
+        allowedTags = ("Original", "Video Original", "Large")
+        if (sizes[-1].getAttribute("label") in allowedTags):
           imgurl = sizes[-1].getAttribute("source")
         else:
           print "Failed to get original for photo id " + id
@@ -257,7 +258,7 @@ if __name__ == '__main__':
         cache.close()
 
     # Now, construct a query for the list of photo sets
-    url  = "http://api.flickr.com/services/rest/?method=flickr.photosets.getList"
+    url  = "https://api.flickr.com/services/rest/?method=flickr.photosets.getList"
     url += "&user_id=" + config["user"]
     url  = flickrsign(url, config["token"])
 
@@ -278,7 +279,7 @@ if __name__ == '__main__':
         dir = unicodedata.normalize('NFKD', dir.decode("utf-8", "ignore")).encode('ASCII', 'ignore') # Normalize to ASCII
 
         # Build the list of photos
-        url   = "http://api.flickr.com/services/rest/?method=flickr.photosets.getPhotos"
+        url   = "https://api.flickr.com/services/rest/?method=flickr.photosets.getPhotos"
         url  += "&photoset_id=" + pid
 
         # Append to our list of urls
@@ -288,11 +289,11 @@ if __name__ == '__main__':
     dom.unlink()
 
     # Add the photos which are not in any set
-    url   = "http://api.flickr.com/services/rest/?method=flickr.photos.getNotInSet"
+    url   = "https://api.flickr.com/services/rest/?method=flickr.photos.getNotInSet"
     urls.append( (url, "No Set") )
 
     # Add the user's Favourites
-    url   = "http://api.flickr.com/services/rest/?method=flickr.favorites.getList"
+    url   = "https://api.flickr.com/services/rest/?method=flickr.favorites.getList"
     urls.append( (url, "Favourites") )
 
     # Time to get the photos
@@ -321,12 +322,14 @@ if __name__ == '__main__':
             dom = xml.dom.minidom.parse(response)
 
             # Get the total
-            pages = int(dom.getElementsByTagName("photo")[0].parentNode.getAttribute("pages"))
+            try:
+                pages = int(dom.getElementsByTagName("photo")[0].parentNode.getAttribute("pages"))
+            except IndexError:
+                pages = 0
 
             # Grab the photos
             for photo in dom.getElementsByTagName("photo"):
                 # Tell the user we're grabbing the file
-                print photo.getAttribute("title").encode("utf8") + " ... in set ... " + dir
 
                 # Grab the id
                 photoid = photo.getAttribute("id")
@@ -338,7 +341,12 @@ if __name__ == '__main__':
                 # Skip files that exist
                 if os.access(target, os.R_OK):
                     inodes[photoid] = target
+                    sys.stdout.write('.')
+                    sys.stdout.flush()
                     continue
+                else:
+                    print ''
+                    print photo.getAttribute("title").encode("utf8") + " ... in set ... " + dir
                 
                 # Look it up in our dictionary of inodes first
                 if photoid in inodes and inodes[photoid] and os.access(inodes[photoid], os.R_OK):
@@ -350,3 +358,4 @@ if __name__ == '__main__':
 
             # Move on the next page
             page = page + 1
+    print ""
